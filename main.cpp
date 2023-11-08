@@ -1,35 +1,10 @@
 
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
+#include <glm/glm.hpp>
 
 #include <iostream>
 #include <string>
-
-
-void PrintOpenGLErrors(char const * const Function, char const * const File, int const Line)
-{
-	bool Succeeded = true;
-
-	GLenum Error = glGetError();
-	if (Error != GL_NO_ERROR)
-	{
-		char const * ErrorString = (char const *) gluErrorString(Error);
-		if (ErrorString)
-			std::cerr << ("OpenGL Error in %s at line %d calling function %s: '%s'", File, Line, Function, ErrorString) << std::endl;
-		else
-			std::cerr << ("OpenGL Error in %s at line %d calling function %s: '%d 0x%X'", File, Line, Function, Error, Error) << std::endl;
-	}
-}
-
-#ifdef _DEBUG
-#define CheckedGLCall(x) do { PrintOpenGLErrors(">>BEFORE<< "#x, __FILE__, __LINE__); (x); PrintOpenGLErrors(#x, __FILE__, __LINE__); } while (0)
-#define CheckedGLResult(x) (x); PrintOpenGLErrors(#x, __FILE__, __LINE__);
-#define CheckExistingErrors(x) PrintOpenGLErrors(">>BEFORE<< "#x, __FILE__, __LINE__);
-#else
-#define CheckedGLCall(x) (x)
-#define CheckExistingErrors(x)
-#endif
-
 
 void PrintShaderInfoLog(GLint const Shader)
 {
@@ -54,13 +29,17 @@ int main()
 	if (! glfwInit())
 		return -1;
 
-	window = glfwCreateWindow(640, 480, "Hello World", NULL, NULL);
+	glfwWindowHint(GLFW_SAMPLES, 8 );  // defined samples for  GLFW Window
+	glfwWindowHint(GLFW_RESIZABLE, GL_TRUE);
+
+	window = glfwCreateWindow(3840, 2560, "Hello World", NULL, NULL);
 	if (! window)
 	{
 		glfwTerminate();
 		return -1;
 	}
 	glfwMakeContextCurrent(window);
+	
 
 	GLenum err = glewInit();
 	if (GLEW_OK != err)
@@ -71,99 +50,125 @@ int main()
 	}
 
 	char const * VertexShaderSource = R"GLSL(
-		#version 150
-		in vec2 position;
+		#version 330
+		layout (location = 0) in vec2 position;
+		layout (location = 1) in vec3 bary;
+		layout (location = 2) in vec2 aOffset;
+
+		out vec3 v_bc;
+
 		void main()
 		{
-			gl_Position = vec4(position, 0.0, 1.0);
+			vec2 pos = position * (gl_InstanceID / 100.0);
+			gl_Position = vec4(pos + aOffset, 0.0, 1.0);
+			v_bc = bary;
 		}
 	)GLSL";
 
 	char const * FragmentShaderSource = R"GLSL(
-		#version 150
-		out vec4 outColor;
+		#version 330
+		in vec3 v_bc;
 		void main()
 		{
-			outColor = vec4(1.0, 1.0, 1.0, 1.0);
+			float lineWidth = 0.01;
+			float f_closest_edge = min(v_bc.x, min(v_bc.y, v_bc.z) ); // see to which edge this pixel is the closest
+			float f_width = fwidth(f_closest_edge); // calculate derivative (divide lineWidth by this to have the line width constant in screen-space)
+			float f_alpha = smoothstep(lineWidth, lineWidth + f_width, f_closest_edge); // calculate alpha
+			gl_FragColor = vec4(vec3(1.0 - f_alpha), 1.0);
 		}
 	)GLSL";
 
 	GLfloat const Vertices [] = {
-		0.0f, 0.5f,
-		0.5f, -0.5f,
-		-0.5f, -0.5f
-	};
-
-	GLuint const Elements [] = {
-		0, 1, 2
+		-0.05f, -0.05f, 0.0f, 0.0f, 1.0f,
+		0.05f, -0.05f, 0.0f, 1.0f, 0.0f,
+		0.0f, 0.05f, 1.0f, 0.0f, 0.0f
 	};
 
 	GLuint VAO;
-	CheckedGLCall(glGenVertexArrays(1, & VAO));
-	CheckedGLCall(glBindVertexArray(VAO));
+	glGenVertexArrays(1, & VAO);
+	glBindVertexArray(VAO);
 
 	GLuint VBO;
-	CheckedGLCall(glGenBuffers(1, & VBO));
-	CheckedGLCall(glBindBuffer(GL_ARRAY_BUFFER, VBO));
-	CheckedGLCall(glBufferData(GL_ARRAY_BUFFER, sizeof(Vertices), Vertices, GL_STATIC_DRAW));
-	CheckedGLCall(glBindBuffer(GL_ARRAY_BUFFER, 0));
+	glGenBuffers(1, & VBO);
+	glBindBuffer(GL_ARRAY_BUFFER, VBO);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(Vertices), Vertices, GL_STATIC_DRAW);
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
 
-	GLuint EBO;
-	CheckedGLCall(glGenBuffers(1, & EBO));
-	CheckedGLCall(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO));
-	CheckedGLCall(glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(Elements), Elements, GL_STATIC_DRAW));
+	glm::vec2 translations[100];
+	int index = 0;
+	float offset = 0.1f;
+	for(int y = -10; y < 10; y += 2)
+	{
+		for(int x = -10; x < 10; x += 2)
+		{
+			glm::vec2 translation;
+			translation.x = (float)x/10.0f + offset;
+			translation.y = (float)y/10.0f + offset;
+			translations[index++] = translation;
+		}
+	}  
+
+	GLuint instanceVBO;
+	glGenBuffers(1, &instanceVBO);
+	glBindBuffer(GL_ARRAY_BUFFER, instanceVBO);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec2) * 100, &translations[0], GL_STATIC_DRAW);
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
 
 	GLint Compiled;
-	GLuint VertexShader = CheckedGLResult(glCreateShader(GL_VERTEX_SHADER));
-	CheckedGLCall(glShaderSource(VertexShader, 1, & VertexShaderSource, NULL));
-	CheckedGLCall(glCompileShader(VertexShader));
-	CheckedGLCall(glGetShaderiv(VertexShader, GL_COMPILE_STATUS, & Compiled));
+	GLuint VertexShader = glCreateShader(GL_VERTEX_SHADER);
+	glShaderSource(VertexShader, 1, & VertexShaderSource, NULL);
+	glCompileShader(VertexShader);
+	glGetShaderiv(VertexShader, GL_COMPILE_STATUS, & Compiled);
 	if (! Compiled)
 	{
 		std::cerr << "Failed to compile vertex shader!" << std::endl;
 		PrintShaderInfoLog(VertexShader);
 	}
 
-	GLuint FragmentShader = CheckedGLResult(glCreateShader(GL_FRAGMENT_SHADER));
-	CheckedGLCall(glShaderSource(FragmentShader, 1, & FragmentShaderSource, NULL));
-	CheckedGLCall(glCompileShader(FragmentShader));
-	CheckedGLCall(glGetShaderiv(FragmentShader, GL_COMPILE_STATUS, & Compiled));
+	GLuint FragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
+	glShaderSource(FragmentShader, 1, & FragmentShaderSource, NULL);
+	glCompileShader(FragmentShader);
+	glGetShaderiv(FragmentShader, GL_COMPILE_STATUS, & Compiled);
 	if (! Compiled)
 	{
 		std::cerr << "Failed to compile fragment shader!" << std::endl;
 		PrintShaderInfoLog(FragmentShader);
 	}
 
-	GLuint ShaderProgram = CheckedGLResult(glCreateProgram());
-	CheckedGLCall(glAttachShader(ShaderProgram, VertexShader));
-	CheckedGLCall(glAttachShader(ShaderProgram, FragmentShader));
-	CheckedGLCall(glBindFragDataLocation(ShaderProgram, 0, "outColor"));
-	CheckedGLCall(glLinkProgram(ShaderProgram));
-	CheckedGLCall(glUseProgram(ShaderProgram));
+	GLuint ShaderProgram = glCreateProgram();
+	glAttachShader(ShaderProgram, VertexShader);
+	glAttachShader(ShaderProgram, FragmentShader);
+	glLinkProgram(ShaderProgram);
+	glUseProgram(ShaderProgram);
 
-	GLint PositionAttribute = CheckedGLResult(glGetAttribLocation(ShaderProgram, "position"));
-	CheckedGLCall(glEnableVertexAttribArray(PositionAttribute));
+	glBindBuffer(GL_ARRAY_BUFFER, VBO);
+	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), 0);
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (GLvoid*)(2 * sizeof(float)));
+	glEnableVertexAttribArray(1);
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
 
-	CheckedGLCall(glBindBuffer(GL_ARRAY_BUFFER, VBO));
-	CheckedGLCall(glVertexAttribPointer(PositionAttribute, 2, GL_FLOAT, GL_FALSE, 0, 0));
-	CheckedGLCall(glBindBuffer(GL_ARRAY_BUFFER, 0));
+	glEnableVertexAttribArray(2);
+	glBindBuffer(GL_ARRAY_BUFFER, instanceVBO);
+	glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
+	glBindBuffer(GL_ARRAY_BUFFER, 0);	
+	glVertexAttribDivisor(2, 1);  
 
 	while (! glfwWindowShouldClose(window))
 	{
-		CheckedGLCall(glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT));
-		CheckedGLCall(glDrawElements(GL_TRIANGLES, 3, GL_UNSIGNED_INT, 0));
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+		glDrawArraysInstanced(GL_TRIANGLES, 0, 3, 100);  
 
 		glfwSwapBuffers(window);
 		glfwPollEvents();
 	}
 
-	CheckedGLCall(glDeleteProgram(ShaderProgram));
-	CheckedGLCall(glDeleteShader(FragmentShader));
-	CheckedGLCall(glDeleteShader(VertexShader));
+	glDeleteProgram(ShaderProgram);
+	glDeleteShader(FragmentShader);
+	glDeleteShader(VertexShader);
 
-	CheckedGLCall(glDeleteBuffers(1, & EBO));
-	CheckedGLCall(glDeleteBuffers(1, & VBO));
-	CheckedGLCall(glDeleteVertexArrays(1, & VAO));
+	glDeleteBuffers(1, & VBO);
+	glDeleteVertexArrays(1, & VAO);
 
 	glfwTerminate();
 	return 0;
