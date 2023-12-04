@@ -7,10 +7,14 @@
 #include <iostream>
 #include <string>
 #include <chrono>
+#include <vector>
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
+#define cimg_display 0
+#include "CImg.h"
 
 using namespace std::chrono;
+using namespace cimg_library;
 
 void PrintShaderInfoLog(GLint const Shader)
 {
@@ -87,7 +91,9 @@ void processInput(GLFWwindow *window)
 {
 	if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(window, true);
-    const float cameraSpeed = 0.5f; // adjust accordingly
+    float cameraSpeed = 0.5f; // adjust accordingly
+    if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS)
+        cameraSpeed *= 2.0;
     if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
         cameraPos += cameraSpeed * walkDirection;
     if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
@@ -97,10 +103,10 @@ void processInput(GLFWwindow *window)
     if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
         cameraPos += glm::normalize(glm::cross(walkDirection, cameraUp)) * cameraSpeed;
     if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS && cameraPos.z <= 3.0)
-        cameraPos.z += 4.0f;
+        cameraPos.z += 6.0f;
 
 	if (cameraPos.z > 3.0)
-		cameraPos.z -= cameraSpeed;
+		cameraPos.z -= 0.1;
 }
 
 GLuint loadTexture(const char * imagepath){
@@ -181,6 +187,112 @@ void update_camera(GLuint shader) {
 	glUniformMatrix4fv(uniProj, 1, GL_FALSE, glm::value_ptr(proj));
 }
 
+void create_box(std::vector<GLfloat> *vertices, std::vector<GLuint> *indices){
+	float cube_width = 10.0f;
+	float cube_height = 10.0f;
+	float cube_depth = 10.0f;
+
+	std::vector<GLfloat> v = {
+		-cube_width,cube_depth,  cube_height,//0
+		-cube_width,-cube_depth, cube_height,//1
+		cube_width,cube_depth,   cube_height,//2
+		cube_width,-cube_depth,  cube_height,//3
+		-cube_width,cube_depth, 0.0f,//4 
+		-cube_width,-cube_depth,0.0f,//5
+		cube_width,cube_depth,  0.0f,//6
+		cube_width,-cube_depth, 0.0f,//7 
+	};
+	 std::vector<GLuint> i = {
+		0, 2, 3, 0, 3, 1,
+		2, 6, 7, 2, 7, 3,
+		7, 6, 4, 4, 5, 7,
+		4, 5, 0, 0, 5, 1,
+		0, 4, 6, 0, 6, 2,
+		1, 7, 5, 1, 3, 7,
+	};
+	std::copy(std::begin(v), std::end(v), std::back_inserter(*vertices));
+	std::copy(std::begin(i), std::end(i), std::back_inserter(*indices));
+}
+
+void create_hull(std::vector<GLfloat> *vertices, std::vector<GLfloat> *bary, float x_offset){
+	float cube_width = 20.0f;
+	float cube_height = 5.0f;
+	float cube_depth = 5.0f;
+
+	std::vector<GLfloat> v = {
+		-cube_width,cube_depth + x_offset,  cube_height * 2.0f,//0
+		cube_width,cube_depth + x_offset,   cube_height * 2.0f,//2
+		cube_width,-cube_depth + x_offset,  cube_height * 2.0f,//3
+		-cube_width,cube_depth + x_offset,  cube_height * 2.0f,//0
+		cube_width,-cube_depth + x_offset,  cube_height * 2.0f,//3
+		-cube_width,-cube_depth + x_offset, cube_height * 2.0f,//1
+		cube_width,cube_depth + x_offset,   cube_height * 2.0f,//2
+		cube_width,cube_depth + x_offset,  0.0f,//6
+		cube_width,-cube_depth + x_offset, 0.0f,//7
+		cube_width,cube_depth + x_offset,   cube_height * 2.0f,//2
+		cube_width,-cube_depth + x_offset, 0.0f,//7
+		cube_width,-cube_depth + x_offset,  cube_height * 2.0f,//3
+		-cube_width,cube_depth + x_offset, 0.0f,//4 
+		-cube_width,-cube_depth + x_offset,0.0f,//5
+		-cube_width,cube_depth + x_offset,  cube_height * 2.0f,//0
+		-cube_width,cube_depth + x_offset,  cube_height * 2.0f,//0
+		-cube_width,-cube_depth + x_offset,0.0f,//5
+		-cube_width,-cube_depth + x_offset, cube_height * 2.0f,//1
+	};
+
+	std::vector<GLfloat> b = {
+		0.0f, 0.0f, 1.0f,//0
+		0.0f, 1.0f, 0.0f,//2
+		1.0f, 0.0f, 0.0f,//3
+		0.0f, 0.0f, 1.0f,//0
+		1.0f, 0.0f, 0.0f,//3
+		0.0f, 1.0f, 0.0f,//1
+		0.0f, 1.0f, 0.0f,//2
+		1.0f, 0.0f, 0.0f,//6
+		0.0f, 0.0f, 1.0f,//7
+		0.0f, 1.0f, 0.0f,//2
+		0.0f, 0.0f, 1.0f,//7
+		1.0f, 0.0f, 0.0f,//3
+		0.0f, 1.0f, 0.0f,//4
+		1.0f, 0.0f, 0.0f,//5
+		0.0f, 0.0f, 1.0f,//0
+		0.0f, 0.0f, 1.0f,//0
+		1.0f, 0.0f, 0.0f,//5
+		0.0f, 1.0f, 0.0f,//1
+	};
+
+	std::copy(std::begin(v), std::end(v), std::back_inserter(*vertices));
+	std::copy(std::begin(b), std::end(b), std::back_inserter(*bary));
+}
+
+GLint buildTextureArray(std::vector<CImg<unsigned char>> arrayOfImages)
+	{
+		int width = arrayOfImages[0].width(), height = arrayOfImages[0].height();
+		GLsizei count = (GLsizei)arrayOfImages.size(); 
+
+		GLuint texture3D;
+		glGenTextures(1, &texture3D);
+		glBindTexture(GL_TEXTURE_2D_ARRAY, texture3D);
+
+		glPixelStorei(GL_UNPACK_ROW_LENGTH, width);
+		glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+
+		glTexParameteri(GL_TEXTURE_2D_ARRAY,GL_TEXTURE_MIN_FILTER,GL_LINEAR_MIPMAP_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D_ARRAY,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D_ARRAY,GL_TEXTURE_WRAP_S,GL_REPEAT);
+		glTexParameteri(GL_TEXTURE_2D_ARRAY,GL_TEXTURE_WRAP_T,GL_REPEAT);
+		glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA8, width, height, count, 0, GL_BGR, GL_UNSIGNED_INT_8_8_8_8_REV, NULL);
+
+		int i = 0;
+		for (CImg image : arrayOfImages)
+		{
+			//printf("%s\n", &image.data());
+			glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, i, image.width(), image.height(), 1, GL_RGB, GL_UNSIGNED_BYTE, image.data());
+			i++;
+		}
+		return texture3D;
+	}
+
 int main()
 {
 	GLFWwindow* window;
@@ -240,7 +352,9 @@ int main()
 		in vec3 bary;
 		in vec3 pos;
 		uniform float time;
+		uniform sampler2DArray textures;
 
+    	
 		void main()
 		{
 			float lineWidth = 0.001;
@@ -248,6 +362,8 @@ int main()
 			float f_width = fwidth(f_closest_edge); // calculate derivative (divide lineWidth by this to have the line width constant in screen-space)
 			float f_alpha = smoothstep(lineWidth, lineWidth + f_width, f_closest_edge); // calculate alpha
 			gl_FragColor = vec4(vec3(1.0f) * (1.0 - f_alpha), 1.0) + vec4((pos / 10.0f + vec3(1.0))/2.0f, 1.0);
+
+			gl_FragColor = texture(textures, texCoords.stp, 0).rgb;
 		}
 	)GLSL";
 
@@ -281,44 +397,15 @@ int main()
 		}
 	)GLSL";
 
+	std::vector<GLfloat> vertices;
+	std::vector<GLfloat> bary;
+
+	for (int i = 0; i < 5; i++) {
+		create_hull(&vertices, &bary, (float) i * 20.0f);
+	}
 	
-
-	float cube_width = 10.0f;
-	float cube_height = 10.0f;
-	float cube_depth = 10.0f;
-
 	float floor_width = 50.0f;
 	float floor_height = 50.0f;
-
-	GLfloat vertices[] = {
-		-cube_width,cube_depth,  cube_height,//0
-		-cube_width,-cube_depth, cube_height,//1
-		cube_width,cube_depth,   cube_height,//2
-		cube_width,-cube_depth,  cube_height,//3
-		-cube_width,cube_depth, 0.0f,//4 
-		-cube_width,-cube_depth,0.0f,//5
-		cube_width,cube_depth,  0.0f,//6
-		cube_width,-cube_depth, 0.0f,//7 
-	};
-	unsigned int indices[] = {
-		0, 2, 3, 0, 3, 1,
-		2, 6, 7, 2, 7, 3,
-		7, 6, 4, 4, 5, 7,
-		4, 5, 0, 0, 5, 1,
-		0, 4, 6, 0, 6, 2,
-		1, 7, 5, 1, 3, 7,
-	};
-
-	GLfloat bary[] = {
-		0.0f, 0.0f, 1.0f,//0
-		0.0f, 1.0f, 0.0f,//1
-		0.0f, 1.0f, 0.0f,//2
-		1.0f, 0.0f, 0.0f,//3
-		0.0f, 1.0f, 0.0f,//4
-		1.0f, 0.0f, 0.0f,//5
-		1.0f, 0.0f, 0.0f,//6
-		0.0f, 0.0f, 1.0f,//7
-	};
 
 	GLfloat vertices2[] = {
 		-floor_width, -floor_width, 0.0f, 0.0f, 0.0f,
@@ -329,17 +416,10 @@ int main()
 		-floor_width, floor_width, 0.0f, 0.0f, 1.0f,
 	};
 
-	// Generate a buffer for the indices
-	GLuint elementbuffer;
-	glGenBuffers(1, &elementbuffer);
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, elementbuffer);
-	glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
-
 	GLuint barybuffer;
 	glGenBuffers(1, &barybuffer);
 	glBindBuffer(GL_ARRAY_BUFFER, barybuffer);
-	glBufferData(GL_ARRAY_BUFFER, sizeof(bary), bary, GL_STATIC_DRAW);
+	glBufferData(GL_ARRAY_BUFFER, bary.size() * sizeof(GLfloat), &bary[0], GL_STATIC_DRAW);
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 	
 	GLuint VAO;
@@ -348,7 +428,7 @@ int main()
 	GLuint VBO;
 	glGenBuffers(1, & VBO);
 	glBindBuffer(GL_ARRAY_BUFFER, VBO);
-	glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+	glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(GLfloat), &vertices[0], GL_STATIC_DRAW);
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 	glBindVertexArray(0);
 
@@ -372,9 +452,10 @@ int main()
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), 0);
 	glEnableVertexAttribArray(0);
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
-	glEnableVertexAttribArray(1);
+	
 	glBindBuffer(GL_ARRAY_BUFFER, barybuffer);
 	glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 0, (void*)0);
+	glEnableVertexAttribArray(1);
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 	glBindVertexArray(0);
 
@@ -387,8 +468,6 @@ int main()
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 	glBindVertexArray(0);
 
-	float target_z = 0.1;
-
 	glUseProgram(ShaderProgram);
 	update_camera(ShaderProgram);
 	glUseProgram(0);
@@ -397,6 +476,39 @@ int main()
 	update_camera(ShaderProgram2);
 	loadTexture("../test.png");
 	glUseProgram(0);
+
+
+
+   // Create 640x480 image
+   CImg<unsigned char> image(640,480,1,3);
+
+   // Fill with magenta
+   cimg_forXY(image,x,y) {
+      image(x,y,0,0)=255;
+      image(x,y,0,1)=0;
+      image(x,y,0,2)=255;
+   }
+
+   // Make some colours
+   unsigned char cyan[]    = {0,   255, 255 };
+   unsigned char black[]   = {0,   0,   0   };
+   unsigned char yellow[]  = {255, 255, 0   };
+
+   // Draw black text on cyan
+   image.draw_text(30,60,"Black 64pt on cyan",black,cyan,1,64);
+
+   // Draw yellow partially transparent text on black
+   image.draw_text(80,200,"Yellow 32pt on black semi-transparent",yellow,black,0.5,32);
+
+   // Save result image as NetPBM PNM - no libraries required
+   image.save_pnm("result.pnm");
+
+   std::vector<CImg<unsigned char>> images;
+
+   images.push_back(image);
+
+   buildTextureArray(images);
+
 
 	glEnable(GL_DEPTH_TEST);
 
@@ -415,15 +527,8 @@ int main()
 
 
 		glBindVertexArray(VAO);
-		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, elementbuffer);
 
-		// Draw the triangles !
-		glDrawElements(
-			GL_TRIANGLES,      // mode
-			sizeof(indices),    // count
-			GL_UNSIGNED_INT,   // type
-			(void*)0           // element array buffer offset
-		);
+		glDrawArrays(GL_TRIANGLES, 0, vertices.size() * sizeof(GLfloat));
 
 		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 		glBindVertexArray(0);
