@@ -4,8 +4,11 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
-#include <iostream>
 #include <string>
+#include <iostream>
+#define FMT_HEADER_ONLY
+#include <fmt/core.h>
+#include <fmt/ranges.h>
 #include <chrono>
 #include <vector>
 #define STB_IMAGE_IMPLEMENTATION
@@ -15,6 +18,37 @@
 
 using namespace std::chrono;
 using namespace cimg_library;
+
+
+void GLAPIENTRY
+MessageCallback( GLenum source,
+                 GLenum type,
+                 GLuint id,
+                 GLenum severity,
+                 GLsizei length,
+                 const GLchar* message,
+                 const void* userParam )
+{
+  fprintf( stderr, "GL CALLBACK: %s type = 0x%x, severity = 0x%x, message = %s\n",
+           ( type == GL_DEBUG_TYPE_ERROR ? "** GL ERROR **" : "" ),
+            type, severity, message );
+}
+
+void PrintProgramInfoLog(GLint const Program)
+{
+	int InfoLogLength = 0;
+	int CharsWritten = 0;
+
+	glGetProgramiv(Program, GL_INFO_LOG_LENGTH, & InfoLogLength);
+
+	if (InfoLogLength > 0)
+	{
+		GLchar * InfoLog = new GLchar[InfoLogLength];
+		glGetProgramInfoLog(Program, InfoLogLength, & CharsWritten, InfoLog);
+		std::cout << "Shader Info Log:" << std::endl << InfoLog << std::endl;
+		delete [] InfoLog;
+	}
+}
 
 void PrintShaderInfoLog(GLint const Shader)
 {
@@ -122,29 +156,22 @@ GLuint loadTexture(const char * imagepath){
     // Create one OpenGL texture
     GLuint textureID;
     glGenTextures(1, &textureID);
-
-    // "Bind" the newly created texture : all future texture functions will modify this texture
     glBindTexture(GL_TEXTURE_2D, textureID);
-
-    // Read the file, call glTexImage2D with the right parameters
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, image);
 
-
-    // Nice trilinear filtering.
     //glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     //glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    //glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
-    //glBindTexture(GL_TEXTURE_2D, 0);
+    glBindTexture(GL_TEXTURE_2D, 0);
 
     // Return the ID of the texture we just created
     return textureID;
 }
 
 GLuint CreateShader(char const *vert, char const *frag) {
-		GLint Compiled;
+	GLint Compiled;
 	GLuint VertexShader = glCreateShader(GL_VERTEX_SHADER);
 	glShaderSource(VertexShader, 1, & vert, NULL);
 	glCompileShader(VertexShader);
@@ -159,16 +186,24 @@ GLuint CreateShader(char const *vert, char const *frag) {
 	glShaderSource(FragmentShader, 1, & frag, NULL);
 	glCompileShader(FragmentShader);
 	glGetShaderiv(FragmentShader, GL_COMPILE_STATUS, & Compiled);
-	if (! Compiled)
+	if (!Compiled)
 	{
 		std::cerr << "Failed to compile fragment shader!" << std::endl;
 		PrintShaderInfoLog(FragmentShader);
 	}
 
+	GLint Linked;
 	GLuint ShaderProgram = glCreateProgram();
 	glAttachShader(ShaderProgram, VertexShader);
 	glAttachShader(ShaderProgram, FragmentShader);
 	glLinkProgram(ShaderProgram);
+
+	glGetProgramiv( ShaderProgram, GL_LINK_STATUS, &Linked); //requesting the status
+        if (!Linked)
+        {
+		std::cerr << "Failed to link shader!" << std::endl;
+		PrintProgramInfoLog(ShaderProgram);
+	}
 	return ShaderProgram;
 }
 
@@ -214,7 +249,7 @@ void create_box(std::vector<GLfloat> *vertices, std::vector<GLuint> *indices){
 	std::copy(std::begin(i), std::end(i), std::back_inserter(*indices));
 }
 
-void create_hull(std::vector<GLfloat> *vertices, std::vector<GLfloat> *bary, float x_offset){
+void create_hull(std::vector<GLfloat> *vertices, std::vector<GLfloat> *bary, std::vector<GLuint> *indices, float x_offset, unsigned int index){
 	float cube_width = 20.0f;
 	float cube_height = 5.0f;
 	float cube_depth = 5.0f;
@@ -241,55 +276,78 @@ void create_hull(std::vector<GLfloat> *vertices, std::vector<GLfloat> *bary, flo
 	};
 
 	std::vector<GLfloat> b = {
-		0.0f, 0.0f, 1.0f,//0
-		0.0f, 1.0f, 0.0f,//2
-		1.0f, 0.0f, 0.0f,//3
-		0.0f, 0.0f, 1.0f,//0
-		1.0f, 0.0f, 0.0f,//3
-		0.0f, 1.0f, 0.0f,//1
-		0.0f, 1.0f, 0.0f,//2
-		1.0f, 0.0f, 0.0f,//6
-		0.0f, 0.0f, 1.0f,//7
-		0.0f, 1.0f, 0.0f,//2
-		0.0f, 0.0f, 1.0f,//7
-		1.0f, 0.0f, 0.0f,//3
-		0.0f, 1.0f, 0.0f,//4
-		1.0f, 0.0f, 0.0f,//5
-		0.0f, 0.0f, 1.0f,//0
-		0.0f, 0.0f, 1.0f,//0
-		1.0f, 0.0f, 0.0f,//5
-		0.0f, 1.0f, 0.0f,//1
+		0.0f, 1.0f,//0
+		1.0f, 1.0f,//2
+		0.0f, 1.0f,//3
+		0.0f, 1.0f,//0
+		0.0f, 1.0f,//3
+		1.0f, 1.0f,//1
+		1.0f, 1.0f,//2
+		1.0f, 0.0f,//6
+		0.0f, 0.0f,//7
+		1.0f, 1.0f,//2
+		0.0f, 0.0f,//7
+		0.0f, 1.0f,//3
+		0.0f, 0.0f,//4
+		1.0f, 0.0f,//5
+		0.0f, 1.0f,//0
+		0.0f, 1.0f,//0
+		1.0f, 0.0f,//5
+		1.0f, 1.0f,//1
 	};
+
+	for ( int i = 0; i < 6; i++) {
+		indices->push_back(0);
+	}
+	for ( int i = 0; i < 6; i++) {
+		indices->push_back(index);
+	}
+	for ( int i = 0; i < 6; i++) {
+		indices->push_back(index + 1);
+	}
 
 	std::copy(std::begin(v), std::end(v), std::back_inserter(*vertices));
 	std::copy(std::begin(b), std::end(b), std::back_inserter(*bary));
 }
 
-GLint buildTextureArray(std::vector<CImg<unsigned char>> arrayOfImages)
+GLuint buildTextureArray()
 	{
-		int width = arrayOfImages[0].width(), height = arrayOfImages[0].height();
-		GLsizei count = (GLsizei)arrayOfImages.size(); 
+
+		int width = 640, height = 480;
+		GLsizei count = 10; 
 
 		GLuint texture3D;
 		glGenTextures(1, &texture3D);
 		glBindTexture(GL_TEXTURE_2D_ARRAY, texture3D);
 
-		glPixelStorei(GL_UNPACK_ROW_LENGTH, width);
-		glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+		//glPixelStorei(GL_UNPACK_ROW_LENGTH, width);
+		//glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 
-		glTexParameteri(GL_TEXTURE_2D_ARRAY,GL_TEXTURE_MIN_FILTER,GL_LINEAR_MIPMAP_LINEAR);
-		glTexParameteri(GL_TEXTURE_2D_ARRAY,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
-		glTexParameteri(GL_TEXTURE_2D_ARRAY,GL_TEXTURE_WRAP_S,GL_REPEAT);
-		glTexParameteri(GL_TEXTURE_2D_ARRAY,GL_TEXTURE_WRAP_T,GL_REPEAT);
-		glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA8, width, height, count, 0, GL_BGR, GL_UNSIGNED_INT_8_8_8_8_REV, NULL);
+		glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGB, width, height, count, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
 
 		int i = 0;
-		for (CImg image : arrayOfImages)
+		for (int i = 0; i < count; i++)
 		{
+			// Create 640x480 image
+			CImg<unsigned char> image(width,height,1,3);
+			cimg_forXY(image,x,y) {
+				image(x,y,0,0)=255;
+				image(x,y,0,1)=0;
+				image(x,y,0,2)=255;
+			}
+			unsigned char cyan[]    = {0,   255, 255 };
+			unsigned char black[]   = {0,   0,   0   };
+			unsigned char yellow[]  = {255, 255, 0   };
+			image.draw_text(30,60, fmt::format("Black 64pt on cyan {}!", i).c_str(),black,cyan,1,64);
+			image.draw_text(80,200,"Yellow 32pt on black semi-transparent",yellow,black,0.5,32);
+			image.save_png(fmt::format("{}.png", i).c_str());
+			image.permute_axes("cxyz");
 			//printf("%s\n", &image.data());
-			glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, i, image.width(), image.height(), 1, GL_RGB, GL_UNSIGNED_BYTE, image.data());
-			i++;
+			glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, i, width, height, 1, GL_RGB, GL_UNSIGNED_BYTE, image.data());
 		}
+		glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    	glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
 		return texture3D;
 	}
 
@@ -328,7 +386,8 @@ int main()
 	char const * VertexShaderSource = R"GLSL(
 		#version 330
 		layout (location = 0) in vec3 position;
-		layout (location = 1) in vec3 barycentric;
+		layout (location = 1) in vec2 tex;
+		layout (location = 2) in uint tID;
 
 		uniform mat4 model;
 		uniform mat4 view;
@@ -336,34 +395,31 @@ int main()
 
 		uniform float time;
 
-		out vec3 bary;
+		out vec2 texCoords;
 		out vec3 pos;
+		flat out uint texID;
 
 		void main()
 		{
 			gl_Position = proj * view * model * vec4(position, 1.0);
-			bary = barycentric;
 			pos = position;
+			texCoords = tex;
+			texID = tID;
 		}
 	)GLSL";
 
 	char const * FragmentShaderSource = R"GLSL(
 		#version 330
-		in vec3 bary;
 		in vec3 pos;
+		in vec2 texCoords;
+		flat in uint texID;
 		uniform float time;
 		uniform sampler2DArray textures;
 
-    	
 		void main()
 		{
-			float lineWidth = 0.001;
-			float f_closest_edge = min(bary.x, min(bary.y, bary.z) ); // see to which edge this pixel is the closest
-			float f_width = fwidth(f_closest_edge); // calculate derivative (divide lineWidth by this to have the line width constant in screen-space)
-			float f_alpha = smoothstep(lineWidth, lineWidth + f_width, f_closest_edge); // calculate alpha
-			gl_FragColor = vec4(vec3(1.0f) * (1.0 - f_alpha), 1.0) + vec4((pos / 10.0f + vec3(1.0))/2.0f, 1.0);
 
-			gl_FragColor = texture(textures, texCoords.stp, 0).rgb;
+			gl_FragColor = vec4(texture(textures, vec3(1.0 - texCoords.xy, texID)).rgb, 1.0);
 		}
 	)GLSL";
 
@@ -399,11 +455,14 @@ int main()
 
 	std::vector<GLfloat> vertices;
 	std::vector<GLfloat> bary;
+	std::vector<GLuint> indices;
 
 	for (int i = 0; i < 5; i++) {
-		create_hull(&vertices, &bary, (float) i * 20.0f);
+		create_hull(&vertices, &bary, &indices, (float) i * 20.0f, i * 2);
 	}
-	
+
+	fmt::print("{}\n", indices);
+
 	float floor_width = 50.0f;
 	float floor_height = 50.0f;
 
@@ -420,6 +479,13 @@ int main()
 	glGenBuffers(1, &barybuffer);
 	glBindBuffer(GL_ARRAY_BUFFER, barybuffer);
 	glBufferData(GL_ARRAY_BUFFER, bary.size() * sizeof(GLfloat), &bary[0], GL_STATIC_DRAW);
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+	
+	GLuint indexbuffer;
+	glGenBuffers(1, &indexbuffer);
+	glBindBuffer(GL_ARRAY_BUFFER, indexbuffer);
+	glBufferData(GL_ARRAY_BUFFER, indices.size() * sizeof(GLuint), &indices[0], GL_STATIC_DRAW);
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 	
 	GLuint VAO;
@@ -454,8 +520,13 @@ int main()
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 	
 	glBindBuffer(GL_ARRAY_BUFFER, barybuffer);
-	glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 0, (void*)0);
+	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
 	glEnableVertexAttribArray(1);
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+	glBindBuffer(GL_ARRAY_BUFFER, indexbuffer);
+	glVertexAttribIPointer(2, 1, GL_UNSIGNED_INT, GL_FALSE, 0);
+	glEnableVertexAttribArray(2);
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 	glBindVertexArray(0);
 
@@ -474,43 +545,18 @@ int main()
 
 	glUseProgram(ShaderProgram2);
 	update_camera(ShaderProgram2);
-	loadTexture("../test.png");
+	GLuint floorTexture = loadTexture("../test.png");
 	glUseProgram(0);
 
 
+    std::vector<CImg<unsigned char>> images;
+    GLuint textureArray = buildTextureArray();
 
-   // Create 640x480 image
-   CImg<unsigned char> image(640,480,1,3);
-
-   // Fill with magenta
-   cimg_forXY(image,x,y) {
-      image(x,y,0,0)=255;
-      image(x,y,0,1)=0;
-      image(x,y,0,2)=255;
-   }
-
-   // Make some colours
-   unsigned char cyan[]    = {0,   255, 255 };
-   unsigned char black[]   = {0,   0,   0   };
-   unsigned char yellow[]  = {255, 255, 0   };
-
-   // Draw black text on cyan
-   image.draw_text(30,60,"Black 64pt on cyan",black,cyan,1,64);
-
-   // Draw yellow partially transparent text on black
-   image.draw_text(80,200,"Yellow 32pt on black semi-transparent",yellow,black,0.5,32);
-
-   // Save result image as NetPBM PNM - no libraries required
-   image.save_pnm("result.pnm");
-
-   std::vector<CImg<unsigned char>> images;
-
-   images.push_back(image);
-
-   buildTextureArray(images);
-
-
+	glEnable(GL_TEXTURE_2D_ARRAY);
 	glEnable(GL_DEPTH_TEST);
+	// During init, enable debug output
+	glEnable              ( GL_DEBUG_OUTPUT );
+	glDebugMessageCallback( MessageCallback, 0 );
 
 	while (! glfwWindowShouldClose(window))
 	{
@@ -525,22 +571,23 @@ int main()
 
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-
+		glBindTexture(GL_TEXTURE_2D_ARRAY, textureArray);   
 		glBindVertexArray(VAO);
 
 		glDrawArrays(GL_TRIANGLES, 0, vertices.size() * sizeof(GLfloat));
-
 		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 		glBindVertexArray(0);
+		glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
 		glUseProgram(0);
 
 
 		glUseProgram(ShaderProgram2);
+		glBindTexture(GL_TEXTURE_2D, floorTexture);
 		glUniformMatrix4fv(glGetUniformLocation(ShaderProgram2, "view"), 1, GL_FALSE, glm::value_ptr(view));
 		glBindVertexArray(VAO2);
 		glDrawArrays(GL_TRIANGLES, 0, 6);
 		glBindVertexArray(0);
-
+		glBindTexture(GL_TEXTURE_2D, 0);
 		glUseProgram(0);
 
 		glfwSwapBuffers(window);
