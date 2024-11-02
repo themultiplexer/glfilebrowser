@@ -54414,7 +54414,7 @@ namespace cimg_library {
           load_other(filename);
         } catch (CImgIOException&) {
           cimg::exception_mode(omode);
-          throw CImgIOException(_cimg_instance
+                    throw CImgIOException(_cimg_instance
                                 "load(): Failed to recognize format of file '%s'.",
                                 cimg_instance,
                                 filename);
